@@ -1,0 +1,261 @@
+Analyze the given user prompt and determine if it contains tasks that could be executed in PARALLEL as independent LLM calls.
+
+A query is considered parallelizable if it asks for MULTIPLE INDEPENDENT outputs or operations that can be processed separately without dependencies. Look for EXPLICIT or IMPLICIT requests for multiple outputs.
+
+CRITERIA for parallelizable queries:
+1. The query asks for MULTIPLE (two or more) outputs or operations of a similar type
+2. Each subtask can be processed independently from others
+3. The results could be computed in parallel without dependencies between subtasks
+4. A clear pattern of repetition or batch processing can be identified
+
+PATTERN INDICATORS (look for these signals):
+- Numerical identifiers (e.g., "Generate 5 stories", "3 different options")
+- List formats (comma-separated, numbered, bulleted)
+- Keywords like "each", "every", "all", "multiple", "several", "various"
+- Plural forms of outputs ("stories", "summaries", "translations")
+- Multiple questions marks in sequence
+- Language variants: "cada", "tous", "alle", "tutti", "cada", etc.
+
+KNOWN VALID CATEGORIES - PRIORITIZE THESE CATEGORIES:
+- Repeated Generation: Requests multiple examples/variations (e.g., "Generate 10 different stories" or "Give me 5 taglines")
+- Reading Comprehension: Asks multiple questions about the same passage (e.g., "Read this text and answer these 3 questions")
+- Keyword Extraction: Asks to identify specific terms across text (e.g., "Find all mentions of these keywords in the passage")
+- Named Entity Recognition: Asks to identify and classify multiple named entities (e.g., "Identify all people, locations, and organizations in this text")
+- Translation: Asks to translate multiple separate text segments (e.g., "Translate these 5 sentences to Spanish")
+- Language Correction: Asks to correct multiple sentences or text segments (e.g., "Fix the grammar in these 4 sentences")
+- Sentiment Analysis: Asks to analyze sentiment across multiple texts (e.g., "Determine the sentiment of each of these customer reviews")
+
+You should carefully consider if the prompt fits into one of these 7 known categories BEFORE considering any novel category. Be GENEROUS in applying these categories - if a query seems even remotely related to one, try to classify it accordingly.
+
+FOR MULTILINGUAL QUERIES:
+- Apply the same parallelization criteria regardless of language
+- Look for language-specific list markers and plurals
+- When in doubt about translation, err on the side of identifying potential parallelism
+
+Examples of what is NOT parallelizable:
+- Writing a single bio or description, even if it includes multiple attributes
+- General complex questions with multiple parts that build on each other
+- Questions about implementing or designing systems
+- Analytical questions even if they involve multiple steps
+- Research questions covering multiple topics in a single report
+- Any query where the answer parts depend on each other
+- Requests for a single analysis, even if it covers multiple aspects
+- A single task with multiple inputs
+- Financial projections or calculations that build on previous results
+- Matrix or table generation where cells depend on each other
+
+NOVEL CATEGORIES:
+Novel categories should only be created when necessary. A novel category is ONLY valid if:
+1. It contains MULTIPLE independent subtasks
+2. The subtasks are separable with no dependencies
+3. It cannot reasonably fit into any of the existing 7 categories
+4. You can cleanly extract a template, context, and data elements
+
+Before creating a novel category, check if it can be considered a domain-specific application of an existing category. For example, "analyze these financial statements" with multiple statements is likely Sentiment Analysis applied to finance rather than a novel category.
+
+CRITICAL SCHEMA CONSTRUCTION RULES:
+If you determine a query is parallelizable, convert it into this JSON schema format:
+
+{
+"serial": "<original prompt with names deanonymized and minimal formatting>",
+"template": "<pattern for ONE iteration of the task>",
+"context": "<shared information for all executions that appears in the original prompt>",
+"data": ["<item1>", "<item2>", ...] OR null,
+"n": <number of repetitions> OR null
+}
+
+SCHEMA FIELD RULES - YOU HAVE TO FOLLOW THESE RULES EXACTLY:
+1. NAME DEANONYMIZATION IS MANDATORY:
+- ALWAYS replace NAME_1, NAME_2, etc. with real names like Alice, Bob, Charlie, etc.
+- For example: "NAME_1 went to the store" becomes "Alice went to the store"
+- This applies to ALL fields (serial, template, context, data)
+
+2. SERIAL FIELD:
+- The original prompt with minimal changes (only deanonymize names and fix critical formatting)
+- DO NOT add new information or substantially alter the prompt
+- DO NOT remove information from the original prompt
+
+3. CONTEXT FIELD:
+- ONLY include information from the original prompt that is shared across ALL executions
+- For Reading Comprehension: This is the passage to be analyzed
+- For Keyword Extraction: This is the text to be processed
+- DO NOT create or invent context not present in the original prompt
+- Set to null if there is no shared context
+
+4. MUTUAL EXCLUSIVITY (PAY ATTENTION TO THIS):
+- NEVER include both "data" and "n" fields. I STRICTLY FORBID YOU DO THIS.
+- Use "data" for specific items like questions, sentences, keywords
+- Use "n" ONLY for Repeated Generation tasks with a numeric count
+
+5. TEMPLATE FIELD:
+- For Repeated Generation:
+	- Create a singularized version of the request
+	- DO NOT include {n} placeholder
+	- Example: "Generate 5 story ideas" → "Generate a story idea"
+- For other categories:
+	- ALWAYS include the {context} placeholder if the context field is not null
+	- ALWAYS use {data} placeholder
+	- {data} represents the variable element that changes in each execution
+	- {context} represents the shared information used in all executions
+	- When both context and data are used, ALWAYS format as: "{context}\n\n[task instruction with {data}]"
+- Standard format patterns for templates:
+	- Reading Comprehension: "{context}\n\nBased on the above passage, answer this question: {data}"
+	- Translation: "Translate this to [language]: {data}"
+	- Named Entity Recognition: "Identify all {data} in the following text:\n\n{context}"
+	- When context is provided for ANY category: ALWAYS start with "{context}\n\n" followed by the task
+
+6. DATA FIELD:
+- Must be a list of simple text strings (at least 2 items)
+- Each item should be directly from the original prompt when possible
+- DO NOT include nested objects or arrays
+- Set to null for Repeated Generation tasks
+- For implicit lists, extract the items clearly (e.g., "apples, oranges, and bananas" → ["apples", "oranges", "bananas"])
+
+EXAMPLES OF CORRECT SCHEMAS:
+
+1. Repeated Generation:
+Original: "Give me 5 healthy breakfast ideas."
+Schema:
+{
+"serial": "Give me 5 healthy breakfast ideas.",
+"template": "Give me a healthy breakfast idea.",
+"context": null,
+"data": null,
+"n": 5
+}
+
+2. Reading Comprehension:
+Original: "Climate change is the long-term alteration of temperature and typical weather patterns. It primarily occurs due to the burning of fossil fuels, which releases carbon dioxide and other greenhouse gases into the air. Read this passage above about climate change and answer these questions: 1. What causes global warming? 2. What are its effects?"
+Schema:
+{
+"serial": "Climate change is the long-term alteration of temperature and typical weather patterns. It primarily occurs due to the burning of fossil fuels, which releases carbon dioxide and other greenhouse gases into the air. Read this passage above about climate change and answer these questions: 1. What causes global warming? 2. What are its effects?",
+"template": "{context}\n\nBased on the above passage about climate change, answer this question: {data}",
+"context": "Climate change is the long-term alteration of temperature and typical weather patterns. It primarily occurs due to the burning of fossil fuels, which releases carbon dioxide and other greenhouse gases into the air.",
+"data": ["What causes global warming?", "What are its effects?"],
+"n": null
+}
+
+3. Named Entity Recognition:
+Original: "Identify all people, places, and organizations in this article about NAME_1's visit to London."
+Schema:
+{
+"serial": "Identify all people, places, and organizations in this article about Alice's visit to London.",
+"template": "Identify all instances of {data} in the following article.\n\n{context}",
+"context": "Alice visited London last week where she met with the CEO of Microsoft. During her stay, she also toured the British Museum and had dinner with her friend Bob at The Ritz.",
+"data": ["people", "places", "organizations"],
+"n": null
+}
+
+4. Translation:
+Original: "Translate these phrases to Spanish: Good morning, Good night, Thank you."
+Schema:
+{
+"serial": "Translate these phrases to Spanish: Good morning, Good night, Thank you.",
+"template": "Translate this phrase to Spanish: {data}",
+"context": null,
+"data": ["Good morning", "Good night", "Thank you"],
+"n": null
+}
+
+5. Implicit Parallelism:
+Original: "What are the capitals of France, Germany, Italy, and Spain?"
+Schema:
+{
+"serial": "What are the capitals of France, Germany, Italy, and Spain?",
+"template": "What is the capital of {data}?",
+"context": null,
+"data": ["France", "Germany", "Italy", "Spain"],
+"n": null
+}
+
+6. Multi-language Example:
+Original: "Traduci queste frasi in inglese: 'Buongiorno', 'Buonanotte', 'Grazie'."
+Schema:
+{
+"serial": "Traduci queste frasi in inglese: 'Buongiorno', 'Buonanotte', 'Grazie'.",
+"template": "Traduci questa frase in inglese: {data}",
+"context": null,
+"data": ["Buongiorno", "Buonanotte", "Grazie"],
+"n": null
+}
+
+EXAMPLES OF INCORRECT SCHEMAS TO AVOID:
+
+1. WRONG - Using both data and n:
+{
+"serial": "Write 3 short stories about these animals: dogs, cats, and birds.",
+"template": "Write a short story about {data}.",
+"context": null,
+"data": ["dogs", "cats", "birds"],
+"n": 3
+}
+CORRECT version - Since this is not repeated generation (specific topics):
+{
+"serial": "Write 3 short stories about these animals: dogs, cats, and birds.",
+"template": "Write a short story about {data}.",
+"context": null,
+"data": ["dogs", "cats", "birds"],
+"n": null
+}
+
+2. WRONG - Using {n} placeholder in template:
+{
+"serial": "Generate 5 cocktail recipes.",
+"template": "Generate {n} cocktail recipes.",
+"context": null,
+"data": null,
+"n": 5
+}
+CORRECT version - Singularized template without {n}:
+{
+"serial": "Generate 5 cocktail recipes.",
+"template": "Generate a cocktail recipe.",
+"context": null,
+"data": null,
+"n": 5
+}
+
+3. WRONG - Creating context not in the original prompt:
+{
+"serial": "Translate these phrases to Spanish: Good morning, Good night, Thank you.",
+"template": "Translate this phrase to Spanish: {data}",
+"context": "Here are some common English phrases that need to be translated to Spanish.",
+"data": ["Good morning", "Good night", "Thank you"],
+"n": null
+}
+CORRECT version - No invented context:
+{
+"serial": "Translate these phrases to Spanish: Good morning, Good night, Thank you.",
+"template": "Translate this phrase to Spanish: {data}",
+"context": null,
+"data": ["Good morning", "Good night", "Thank you"],
+"n": null
+}
+
+4. WRONG - Missing name deanonymization:
+{
+"serial": "Answer these questions about NAME_1's vacation: Where did she go? When did she return?",
+"template": "Answer this question about NAME_1's vacation: {data}",
+"context": null,
+"data": ["Where did she go?", "When did she return?"],
+"n": null
+}
+CORRECT version - With deanonymization:
+{
+"serial": "Answer these questions about Alice's vacation: Where did she go? When did she return?",
+"template": "Answer this question about Alice's vacation: {data}",
+"context": null,
+"data": ["Where did she go?", "When did she return?"],
+"n": null
+}
+
+You must respond in valid JSON with these fields:
+- parallelizable: boolean
+- category: the category name if parallelizable, null otherwise
+- is_novel_category: boolean indicating if this is a new category beyond the known categories
+- category_description: description of the category if it's novel, null otherwise
+- serial: the original prompt with names deanonymized
+- template: the template for parallel execution (or null)
+- context: the shared context (or null)
+- data: the list of parallel items (or null)
+- n: the number of repetitions for repeated generation (or null)
