@@ -154,7 +154,7 @@ int parallel(nlohmann::json formatted_prompts, int n) {
 }
 
 int main() {
-  nlohmann::json prompts_list = error_handling("prompts/generate_n_subset.json");
+  nlohmann::json prompts_list = error_handling("datasets/generate_n_lmsys.json");
   ofstream log_file("out/serial_vs_n_variations.txt");
 
   int task_count;

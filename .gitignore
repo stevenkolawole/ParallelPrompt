@@ -1,3 +1,20 @@
 bin/
 obj/
 out/
+
+# IDE-specific files
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Any log files
+*.log
+
+# Build directories
+build/
+
+# Dependency directories that might be added later
+deps/
