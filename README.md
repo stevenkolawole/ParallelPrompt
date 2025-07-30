@@ -15,14 +15,20 @@
 git clone https://github.com/stevenkolawole/parallelprompt.git
 cd parallelprompt
 
+# Set OpenAI API key
+export OPENAI_API_KEY="your-api-key-here"
+
 # Compile the execution engine
 make
 
-# Run a quick test (10 samples)
-./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output test_exec_output.json
+# Run a quick test (10 samples by default, schema-driven)
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output test_results.json
+
+# Run end-to-end evaluation (with schema extraction)
+./bin/alphabits --queries datasets/wildchat_parallelizable_queries.csv --output e2e_results.json --end-to-end
 
 # View results
-cat test_exec_output.json
+cat test_results.json
 ```
 
 ---
@@ -30,7 +36,7 @@ cat test_exec_output.json
 ## 📊 Key Results
 
 - **10.3%** of real user prompts contain parallelizable structure  
-- **1.4–5.7× speedups** across different task categories  
+- **Up to 7x speedups** across different task categories  
 - **>90% quality preservation** on factual tasks  
 - **37,000+ prompts** across 11+ languages with structured schemas  
 
@@ -38,37 +44,25 @@ cat test_exec_output.json
 
 ## 🏗️ Architecture Overview
 
-PARALLELPROMPT implements a **two-phase architecture** for structure-aware LLM execution:
+PARALLELPROMPT supports both **schema-driven** and **end-to-end** execution modes:
+
+### Schema-Driven Mode (Default)
 
 ```
-Phase 1: Schema Extraction         Phase 2: Execution Evaluation
-┌─────────────────────────┐       ┌────────────────────────┐
-│  Raw User Prompt        │ ────► │   Serial Execution     │
-│                         │       │   Parallel Execution   │
-│ find_parallelprompts.py │       │   Performance Analysis │
-│ (Claude 3.5 via Bedrock)│       │                        │
-└─────────────────────────┘       │   C++ Execution Suite  │
-                                  │   (OpenAI GPT-4)       │
-                                  └────────────────────────┘
+Pre-extracted Schemas (CSV)  ──►  Parallel Execution Engine (C++)
+                                  ├─ Serial Execution
+                                  ├─ Parallel Execution  
+                                  └─ Performance Analysis
 ```
 
----
+### End-to-End Mode (`--end-to-end`)
 
-### Phase 1: Schema Extraction (`data_curation/`)
-
-- **Input**: Raw user prompts from LMSYS-Chat-1M, WildChat-1M  
-- **Process**: Claude 3.5 via AWS Bedrock extracts parallelizable structure  
-- **Validation**: Three-tier validation system (high/medium/low confidence)  
-- **Output**: Structured CSV with 5-field schemas (template, context, data/n, category)  
-
----
-
-### Phase 2: Execution Evaluation (`src/`)
-
-- **Input**: Validated schemas from Phase 1  
-- **Process**: Category-agnostic parallel execution using OpenAI GPT-4  
-- **Metrics**: Latency, quality, normalized speedup analysis  
-- **Output**: Performance comparisons, speedup measurements  
+```
+Raw User Prompt  ──►  Schema Extraction  ──►  Parallel Execution Engine
+                      (GPT-4o)                ├─ Serial Execution
+                                              ├─ Parallel Execution
+                                              └─ Performance Analysis
+```
 
 ---
 
@@ -76,18 +70,19 @@ Phase 1: Schema Extraction         Phase 2: Execution Evaluation
 
 ```text
 parallelprompt/
-├── data_curation/          # Phase 1: Schema extraction (AWS Bedrock)
-│   ├── find_parallelprompts.py    # Claude 3.5 Haiku extraction script
-│   ├── system_prompt.txt          # Comprehensive extraction prompt
-│   └── README.md                  # Bedrock setup & curation docs
-├── datasets/               # Benchmark data (also on HuggingFace)
-│   ├── lmsys_parallelizable_queries.csv    # LMSYS subset
-│   ├── wildchat_parallelizable_queries.csv # WildChat subset  
-│   └── README.md                            # Dataset documentation (on HuggingFace's Dataset Page for now)
-├── src/                    # Phase 2: Execution engine (OpenAI)
+├── src/                    # Execution engine (C++)
 │   ├── serial_vs_parallel.cpp     # Main benchmarking suite
+│   │                              # - Schema-driven execution
+│   │                              # - End-to-end evaluation
+│   │                              # - Post-processing support
 │   ├── parallel_vary_n.cpp        # Scalability analysis
 │   └── Makefile                   # Build system
+├── datasets/               # Benchmark data (Detailed documentation on HuggingFace's Dataset link)
+│   ├── lmsys_parallelizable_queries.csv    # LMSYS subset (963 prompts)
+│   ├── wildchat_parallelizable_queries.csv # WildChat subset
+├── data_curation/          # Schema extraction tools (legacy)
+│   ├── find_parallelprompts.py    # Original Claude 3.5 extraction
+│   └── system_prompt.txt          # Extraction prompt template
 ├── evaluation/             # Quality assessment tools
 │   ├── openai_eval/             # LLM judge evaluation
 │   └── README.md                # Evaluation documentation
@@ -103,9 +98,7 @@ parallelprompt/
 
 - **C++ Compiler**: GCC 9+ or Clang with C++20 support  
 - **Libraries**: `libcurl`, `nlohmann-json`  
-- **API Access**:
-  - AWS Bedrock (for schema extraction – optional)
-  - OpenAI API key (for execution benchmarking)  
+- **OpenAI API Key**: For both schema extraction (if doing end-to-end) and execution
 
 ### Build Instructions
 
@@ -116,38 +109,65 @@ sudo apt-get install build-essential libcurl4-openssl-dev
 # Set OpenAI API key
 export OPENAI_API_KEY="your-api-key-here"
 
-# Compile engine
+# Compile the execution engine
 make
-```
 
-### Optional: Schema Extraction Setup
-
-```bash
-pip install boto3 pandas tqdm datasets backoff
-
-# Set AWS credentials
-export AWS_KEY="your-aws-access-key"
-export AWS_SECRET_KEY="your-aws-secret-key"
+# Verify installation
+./bin/alphabits --help
 ```
 
 ---
 
 ## 📖 Usage Guide
 
-### Basic Execution
+### Schema-Driven Execution (Recommended for Testing)
+
+Uses pre-extracted schemas from the CSV files for fast evaluation:
 
 ```bash
-./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output test_exec_output.json
+# Basic execution (10 samples)
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output results.json
+
+# Custom sample size
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output results.json --sample-size 50
+
+# Full dataset
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output full_results.json --sample-size all
+
+# With post-processing cleanup
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output clean_results.json --post-process
 ```
 
-### Advanced Options
+### End-to-End Evaluation
+
+Extracts schemas from raw prompts using GPT-4o, then executes in parallel:
 
 ```bash
-# Run with 50 samples
-./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output sample.json --sample-size 50 --post-process
+# End-to-end with schema extraction
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output e2e_results.json --end-to-end
+
+# End-to-end with post-processing
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output e2e_clean.json --end-to-end --post-process
+
+# Small sample for testing
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output e2e_test.json --sample-size 5 --end-to-end
 ```
 
-### Output Format
+### Command Line Options
+
+| Option            | Description                                         | Default |
+|-------------------|-----------------------------------------------------|---------|
+| `--queries`       | Path to CSV file with prompts                       | Required |
+| `--output`        | Output JSON file path                               | Required |
+| `--sample-size`   | Number of prompts to process (`<num>` or `all`)     | 10 |
+| `--post-process`  | Enable output cleanup using GPT-4o-mini             | Disabled |
+| `--end-to-end`    | Extract schemas from raw prompts (vs. using CSV)    | Disabled |
+
+---
+
+## 📊 Output Format
+
+### Schema-Driven Mode
 
 ```json
 {
@@ -158,57 +178,62 @@ export AWS_SECRET_KEY="your-aws-secret-key"
   "speedup": 3.41,
   "normalized_speedup": 4.22,
   "serial_duration_ms": 5420,
-  "total_parallel_duration_ms": 1590
+  "total_parallel_duration_ms": 1590,
+  "post_processed_output": "..." // if --post-process enabled
+}
+```
+
+### End-to-End Mode
+
+```json
+{
+  "prompt": "Generate 10 room descriptions...",
+  "category": "Repeated Generation",
+  "extracted_category": "Repeated Generation",
+  "extracted_template": "Generate a detailed description of {data}...",
+  "schema_extraction_duration_ms": 1200,
+  "e2e_parallel_duration_ms": 2790,
+  "e2e_speedup": 1.94,
+  "extraction_successful": true,
+  // ... plus all schema-driven fields
 }
 ```
 
 ---
 
-## 🎯 Use Cases
+## 🔧 Extending the Benchmark
 
-### 1. Schema Extraction Evaluation
-
-```bash```
-<!-- python your_method.py --input raw_prompts.txt --output your_schemas.csv
-./bin/alphabits --queries your_schemas.csv --output comparison.json
-``` -->
-
-### 2. Execution Strategy Benchmarking
+### Benchmarking Parallelization Methods
 
 ```bash
 ./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output baseline.json
-./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output enhanced.json --post-process
+
+# Your decomposition method
+./bin/alphabits --queries your_schemas.csv --output your_results.json
 ```
 
-### 3. Model Benchmarking
+### Try Other Models (for Model Performance Analysis)
 
-- Modify `src/serial_vs_parallel.cpp`
-- Compare models on serial vs. parallel execution
+Update model strings in:
 
----
+```cpp
+call_openai(..., model="gpt-4o-mini", ...)
+call_gpt_schema_extraction(..., model="gpt-4o", ...)
+```
 
-## 📊 Performance Metrics
+### Add Custom Categories
 
-- **Raw Speedup**: Latency comparison  
-- **Normalized Speedup**: Length-normalized throughput  
-- **Quality Preservation**: Semantic equivalence via LLM judge  
-- **Category-wise Trends**: Per-task analysis  
+1. Update `extract_schema_from_prompt()`  
+2. Extend `get_system_prompt()` for new cases  
+3. Evaluate with `--end-to-end`
 
----
+### Custom Post-Processing
 
-## 🔧 Extending the Benchmark
+Edit `post_process_outputs()` in `src/serial_vs_parallel.cpp`:
 
-### Add New Categories
-
-1. Update `system_prompt.txt` in `data_curation/`  
-2. Add parsing logic  
-3. Regenerate schemas  
-
-### Add Evaluation Metrics
-
-1. Modify `main()` in C++  
-2. Update `evaluation/` scripts  
-3. Re-run experiments  
+```cpp
+string post_process_prompt = "Your custom post-processing instructions...";
+```
 
 ---
 
@@ -219,44 +244,16 @@ If you use this benchmark, please cite:
 ```bibtex
 @article{parallelprompt2025,
   title={PARALLELPROMPT: Extracting Parallelism from Large Language Model Queries},
-  author={To be Updated},
-  journal={To be Updated},
+  author={TBD},
+  journal={arXiv preprint arXiv:TBD},
   year={2025}
 }
 ```
-
-<!-- ---
-
-## 🤝 Contributing
-
-We welcome contributions!
-
-```bash
-git clone https://github.com/stevenkolawole/parallelprompt.git
-cd parallelprompt
-git checkout -b feature/my-feature
-make clean && make
-./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output test_exec_output.json
-```
-
-Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for full details.
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License – see [`LICENSE`](LICENSE) for details. -->
-
----
-
-## 🙏 Acknowledgments
-
-- **Dataset Sources**: LMSYS-Chat-1M, WildChat-1M  
-- **Model APIs**: OpenAI GPT-4, Claude 3.5  
-<!-- - **Community**: Thanks to all contributors and researchers using PARALLELPROMPT   -->
 
 ---
 
 ## 💬 Questions?
 
 - 🐛 [GitHub Issues](https://github.com/stevenkolawole/parallelprompt/issues)  
+- 📧 [Contact](TBD)
+<!-- (mailto:skolawol@andrew.cmu.edu) -->
