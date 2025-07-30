@@ -177,14 +177,16 @@ string get_system_prompt(const string& category) {
         return "You are a helpful assistant specializing in reading comprehension. Provide extremely concise and accurate answers based on the given context.";
     } else if (category == "Named Entity Recognition") {
         return "You are a helpful assistant specializing in named entity recognition. Extract entities accurately without irrelevant information.";
-    } else if (category == "Language Correction") {
-        return "You are a helpful assistant specializing in language correction. Correct errors while preserving original meaning; be concise.";
     } else if (category == "Translation") {
         return "You are a helpful assistant specializing in translation. Provide accurate translations without additional commentary.";
+    } else if (category == "Language Correction") {
+        return "You are a helpful assistant specializing in language correction. Correct errors while preserving original meaning.";
     } else if (category == "Sentiment Analysis") {
         return "You are a helpful assistant specializing in sentiment analysis. Provide concise sentiment classifications.";
+    } else if (category == "Repeated Generation") {
+        return "You are a helpful assistant. Provide concise and accurate responses based on the given context.";
     } else {
-        return "You are a helpful assistant. Provide concise and accurate response based on the given task and context.";
+        return "You are a helpful assistant. Provide accurate and relevant information based on the given task.";
     }
 }
 
@@ -213,6 +215,150 @@ openai::Json call_openai(string system_prompt, string prompt, int max_tokens) {
         }
     }
     throw std::runtime_error("Unexpected error in call_openai");
+}
+
+openai::Json call_gpt_schema_extraction(string prompt) {
+    auto openai_instance = openai::OpenAI();
+    
+    // Schema extraction system prompt (based on your data_curation approach)
+    string system_prompt = R"(You are an expert at identifying parallelizable structures in user prompts. 
+
+Analyze this prompt and determine if it contains latent semantic parallelism - meaning it can be decomposed into independent subtasks that can be executed in parallel.
+
+If the prompt is parallelizable, extract a structured schema with these fields:
+- template: Task template with placeholders like {data}, {context}, {n}
+- context: Shared information used across all subtasks (optional)
+- data: JSON array of items to iterate over (for list-based tasks)
+- n: Number for repeated generation tasks (for count-based tasks)
+- category: The type of task (e.g., "Reading Comprehension", "Named Entity Recognition", "Translation", "Repeated Generation", etc.)
+
+Rules:
+1. Use either 'data' OR 'n', never both
+2. Template must contain appropriate placeholders
+3. Only extract if the prompt genuinely benefits from parallel execution
+4. For "generate N things" tasks, use the 'n' field
+5. For "process these items" tasks, use the 'data' field
+
+Respond with a JSON object containing the schema, or {"parallelizable": false} if not suitable for parallelization.)";
+
+    string escaped_system = escape_json(system_prompt);
+    string escaped_prompt = escape_json(prompt);
+    
+    string request = R"({
+       "model": "gpt-4o",
+       "messages": [{"role": "system", "content": ")" + escaped_system + R"("}, {"role": "user", "content": ")" + escaped_prompt + R"("}],
+       "max_tokens": 1000,
+       "temperature": 0.1
+    })";
+    auto json_request = nlohmann::json::parse(request);
+
+    for (int retry = 0; retry < 5; ++retry) {
+        try {
+            auto completion = openai_instance.chat.create(json_request);
+            return completion;
+        } catch (const std::exception& e) {
+            if (retry < 4) {
+                int delay = (1 << retry) * 1000;
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+            } else {
+                std::cerr << "Schema extraction retry failed: " << e.what() << endl;
+                throw;
+            }
+        }
+    }
+    throw std::runtime_error("Schema extraction failed");
+}
+
+// Clean JSON response by removing markdown code blocks
+string clean_json_response(const string& response) {
+    string cleaned = response;
+    
+    // Remove markdown code blocks
+    regex markdown_pattern(R"(```json\s*|\s*```)");
+    cleaned = regex_replace(cleaned, markdown_pattern, "");
+    
+    // Remove leading/trailing whitespace
+    cleaned = regex_replace(cleaned, regex(R"(^\s+|\s+$)"), "");
+    
+    // Remove any remaining backticks at start/end
+    if (!cleaned.empty() && cleaned[0] == '`') {
+        cleaned = cleaned.substr(1);
+    }
+    if (!cleaned.empty() && cleaned.back() == '`') {
+        cleaned = cleaned.substr(0, cleaned.length() - 1);
+    }
+    
+    return cleaned;
+}
+
+// Extract schema from raw prompt using GPT-4o
+Schema extract_schema_from_prompt(const string& original_prompt) {
+    Schema schema;
+    schema.original_prompt = original_prompt;
+    schema.is_valid = false;
+    
+    try {
+        auto completion = call_gpt_schema_extraction(original_prompt);
+        string response = completion["choices"][0]["message"]["content"];
+        
+        // Clean the response to remove markdown formatting
+        string cleaned_response = clean_json_response(response);
+        
+        // Parse the JSON response
+        auto schema_json = nlohmann::json::parse(cleaned_response);
+        
+        // Check if prompt is parallelizable
+        if (schema_json.contains("parallelizable") && !schema_json["parallelizable"].get<bool>()) {
+            return schema; // Return invalid schema
+        }
+        
+        // Extract schema fields
+        if (schema_json.contains("template")) {
+            schema.template_str = schema_json["template"].get<string>();
+        }
+        
+        if (schema_json.contains("context")) {
+            schema.context = schema_json["context"].get<string>();
+        }
+        
+        if (schema_json.contains("category")) {
+            schema.category = schema_json["category"].get<string>();
+        }
+        
+        // Handle data field (robust parsing for different formats)
+        if (schema_json.contains("data")) {
+            if (schema_json["data"].is_array()) {
+                for (const auto& item : schema_json["data"]) {
+                    if (item.is_string()) {
+                        schema.data_items.push_back(item.get<string>());
+                    } else if (item.is_object() || item.is_number()) {
+                        // Convert non-string items to strings
+                        schema.data_items.push_back(item.dump());
+                    }
+                }
+                schema.has_data = !schema.data_items.empty();
+            } else if (schema_json["data"].is_string()) {
+                // Single string - treat as one item
+                schema.data_items.push_back(schema_json["data"].get<string>());
+                schema.has_data = true;
+            }
+        }
+        
+        // Handle n field
+        if (schema_json.contains("n") && schema_json["n"].is_number()) {
+            schema.n_count = schema_json["n"].get<int>();
+            schema.has_n = (schema.n_count > 0);
+        }
+        
+        // Validate extracted schema
+        schema.is_valid = validate_schema(schema);
+        
+    } catch (const exception& e) {
+        std::cerr << "Failed to extract schema from prompt: " << e.what() << endl;
+        // Return invalid schema
+    }
+    
+    return schema;
 }
 
 openai::Json call_openai_postprocess(string system_prompt, string prompt, int max_tokens = 2000) {
@@ -319,7 +465,7 @@ string post_process_outputs(const Schema& schema, const vector<string>& parallel
     
     string post_process_prompt = "Original query: " + schema.original_prompt + "\n\n";
     post_process_prompt += "Parallel outputs:\n" + combined_outputs + "\n";
-    post_process_prompt += "Combine these outputs into a single, coherent response. Clean up MOSTLY redundant phrases and formatting issues. Preserve the structure, and keep all outputs clearly separated with numbers or markers.";
+    post_process_prompt += "Combine these outputs into a single, coherent response that ensures smooth flow. Clean up ONLY redundant phrases and formatting issues. Preserve the structure and content, and keep all outputs clearly separated with numbers or markers";
     
     string system_prompt = "You are a helpful assistant that combines and cleans up parallel outputs. Remove redundancy while preserving all key information and ensuring natural flow.";
     
@@ -337,17 +483,19 @@ int main(int argc, char* argv[]) {
     std::string output;
     std::string sample_size = "10";  // Default sample size
     bool enable_postprocessing = false;
+    bool end_to_end_mode = false;
 
     struct option long_options[] = {
         {"queries", required_argument, nullptr, 'q'},
         {"output", required_argument, nullptr, 'o'},
         {"sample-size", required_argument, nullptr, 's'},
         {"post-process", no_argument, nullptr, 'p'},
+        {"end-to-end", no_argument, nullptr, 'e'},
         {nullptr, 0, nullptr, 0},
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "q:o:s:p", long_options, nullptr)) != -1) {
+    while ((opt = getopt_long(argc, argv, "q:o:s:pe", long_options, nullptr)) != -1) {
         switch (opt) {
             case 'q':
                 queries = optarg;
@@ -361,8 +509,11 @@ int main(int argc, char* argv[]) {
             case 'p':
                 enable_postprocessing = true;
                 break;
+            case 'e':
+                end_to_end_mode = true;
+                break;
             default:
-                std::cerr << "Usage: " << argv[0] << " --queries <csv_file> --output <output_file> [--sample-size <num|all>] [--post-process]" << std::endl;
+                std::cerr << "Usage: " << argv[0] << " --queries <csv_file> --output <output_file> [--sample-size <num|all>] [--post-process] [--end-to-end]" << std::endl;
                 return 1;
         }
     }
@@ -370,6 +521,10 @@ int main(int argc, char* argv[]) {
     if (queries.empty() || output.empty()) {
         std::cerr << "Both --queries and --output are required." << std::endl;
         return 1;
+    }
+
+    if (end_to_end_mode) {
+        std::cout << "End-to-end mode enabled: Will extract schemas from raw prompts using GPT-4o" << std::endl;
     }
 
     std::cout << "Loading schemas from: " << queries << std::endl;
@@ -386,7 +541,7 @@ int main(int argc, char* argv[]) {
         int sample_count = stoi(sample_size);
         sample_count = min(sample_count, static_cast<int>(all_schemas.size()));
         schemas.assign(all_schemas.begin(), all_schemas.begin() + sample_count);
-        std::cout << "Processing sample of " << schemas.size() << " schemas (default sample size is 10). Set --sample-size to `all` to process entire dataset." << std::endl;
+        std::cout << "Processing sample of " << schemas.size() << " schemas (default sample size is 10)" << std::endl;
     }
     
     if (enable_postprocessing) {
@@ -399,28 +554,60 @@ int main(int argc, char* argv[]) {
     int total_serial_tokens = 0, total_parallel_tokens = 0;
     int task_count = 0;
 
-    for (const auto& schema : schemas) {
+    for (const auto& base_schema : schemas) {
+        Schema working_schema = base_schema;
         nlohmann::json result_entry;
-        result_entry["prompt"] = schema.original_prompt;
-        result_entry["category"] = schema.category;
+        result_entry["prompt"] = base_schema.original_prompt;
+        result_entry["category"] = base_schema.category;
 
-        cout << "Processing: " << schema.category << " - " << schema.original_prompt.substr(0, 50) << "..." << endl;
+        cout << "Processing: " << base_schema.category << " - " << base_schema.original_prompt.substr(0, 50) << "..." << endl;
 
-        // Serial execution
+        // End-to-end mode: extract schema from raw prompt
+        if (end_to_end_mode) {
+            cout << "  Extracting schema from raw prompt..." << endl;
+            auto start_e2e = high_resolution_clock::now();
+            
+            working_schema = extract_schema_from_prompt(base_schema.original_prompt);
+            
+            if (!working_schema.is_valid) {
+                cout << "  Schema extraction failed, skipping..." << endl;
+                continue;
+            }
+            
+            result_entry["extracted_category"] = working_schema.category;
+            result_entry["extracted_template"] = working_schema.template_str;
+            result_entry["extraction_successful"] = true;
+            
+            auto end_schema_extraction = high_resolution_clock::now();
+            milliseconds schema_extraction_duration = duration_cast<milliseconds>(end_schema_extraction - start_e2e);
+            result_entry["schema_extraction_duration_ms"] = schema_extraction_duration.count();
+        } else {
+            result_entry["extraction_successful"] = true; // Using pre-extracted schema
+            result_entry["schema_extraction_duration_ms"] = 0;
+        }
+
+        // Serial execution (always using original prompt)
         auto start_serial = high_resolution_clock::now();
-        auto [serial_tokens, serial_output] = execute_serial(schema);
+        auto [serial_tokens, serial_output] = execute_serial(base_schema); // Always use original for fair comparison
         auto end_serial = high_resolution_clock::now();
         milliseconds serial_duration = duration_cast<milliseconds>(end_serial - start_serial);
 
-        // Parallel execution
+        // Parallel execution (using working_schema which may be extracted or pre-existing)
         auto start_parallel = high_resolution_clock::now();
-        auto [parallel_tokens, sum_parallel_tokens, parallel_results] = execute_parallel(schema);
+        auto [parallel_tokens, sum_parallel_tokens, parallel_results] = execute_parallel(working_schema);
         auto end_parallel = high_resolution_clock::now();
         milliseconds parallel_duration = duration_cast<milliseconds>(end_parallel - start_parallel);
 
+        // Calculate end-to-end parallel duration including schema extraction
+        long total_parallel_duration_ms = parallel_duration.count();
+        if (end_to_end_mode) {
+            total_parallel_duration_ms += result_entry["schema_extraction_duration_ms"].get<long>();
+            result_entry["e2e_parallel_duration_ms"] = total_parallel_duration_ms;
+        }
+
         // Record results
         total_serial_duration += serial_duration.count();
-        total_parallel_duration += parallel_duration.count();
+        total_parallel_duration += end_to_end_mode ? total_parallel_duration_ms : parallel_duration.count();
         total_serial_tokens += serial_tokens;
         total_parallel_tokens += sum_parallel_tokens;
 
@@ -439,36 +626,65 @@ int main(int argc, char* argv[]) {
         result_entry["total_parallel_tokens"] = sum_parallel_tokens;
         result_entry["serial_duration_ms"] = serial_duration.count();
         result_entry["parallel_duration_ms"] = parallel_durations;
-        result_entry["total_parallel_duration_ms"] = parallel_duration.count();
+        result_entry["total_parallel_duration_ms"] = end_to_end_mode ? total_parallel_duration_ms : parallel_duration.count();
 
         // Post-process if enabled
         if (enable_postprocessing) {
-            string post_processed = post_process_outputs(schema, parallel_outputs);
+            string post_processed = post_process_outputs(working_schema, parallel_outputs);
             result_entry["post_processed_output"] = post_processed;
         }
 
-        // Calculate speedup
-        result_entry["speedup"] = static_cast<double>(serial_duration.count()) / parallel_duration.count();
+        // Calculate speedup (end-to-end if applicable)
+        double effective_parallel_duration = end_to_end_mode ? total_parallel_duration_ms : parallel_duration.count();
+        result_entry["speedup"] = static_cast<double>(serial_duration.count()) / effective_parallel_duration;
         result_entry["normalized_speedup"] = (static_cast<double>(serial_duration.count()) / serial_tokens) / 
-            (static_cast<double>(parallel_duration.count()) / sum_parallel_tokens);
+            (effective_parallel_duration / sum_parallel_tokens);
+
+        if (end_to_end_mode) {
+            result_entry["e2e_speedup"] = static_cast<double>(serial_duration.count()) / total_parallel_duration_ms;
+        }
 
         results_json.push_back(result_entry);
         ++task_count;
     }
 
-    // Calculate averages
+    // Calculate averages (avoid division by zero)
     nlohmann::json averages;
-    averages["avg_serial_duration"] = total_serial_duration / task_count;
-    averages["avg_parallel_duration"] = total_parallel_duration / task_count;
-    averages["avg_serial_tokens"] = total_serial_tokens / task_count;
-    averages["avg_parallel_tokens"] = total_parallel_tokens / task_count;
+    if (task_count > 0) {
+        averages["avg_serial_duration"] = total_serial_duration / task_count;
+        averages["avg_parallel_duration"] = total_parallel_duration / task_count;
+        averages["avg_serial_tokens"] = total_serial_tokens / task_count;
+        averages["avg_parallel_tokens"] = total_parallel_tokens / task_count;
 
-    auto speedup = static_cast<double>(total_serial_duration) / total_parallel_duration;
-    double normalized_speedup = (static_cast<double>(total_serial_duration) / total_serial_tokens) /
-                              (static_cast<double>(total_parallel_duration) / total_parallel_tokens);
+        auto speedup = static_cast<double>(total_serial_duration) / total_parallel_duration;
+        double normalized_speedup = (static_cast<double>(total_serial_duration) / total_serial_tokens) /
+                                  (static_cast<double>(total_parallel_duration) / total_parallel_tokens);
 
-    averages["speedup"] = speedup;
-    averages["normalized_speedup"] = normalized_speedup;
+        averages["speedup"] = speedup;
+        averages["normalized_speedup"] = normalized_speedup;
+        
+        if (end_to_end_mode) {
+            averages["mode"] = "end-to-end";
+            cout << "End-to-end Average Speedup (including schema extraction): " << speedup << "x" << endl;
+        } else {
+            averages["mode"] = "schema-driven";
+            cout << "Average Speedup: " << speedup << "x" << endl;
+        }
+        
+        cout << "Average Normalized speedup: " << normalized_speedup << "x" << endl;
+    } else {
+        // No valid schemas processed
+        averages["avg_serial_duration"] = 0;
+        averages["avg_parallel_duration"] = 0;
+        averages["avg_serial_tokens"] = 0;
+        averages["avg_parallel_tokens"] = 0;
+        averages["speedup"] = 0;
+        averages["normalized_speedup"] = 0;
+        averages["mode"] = end_to_end_mode ? "end-to-end" : "schema-driven";
+        
+        cout << "No valid schemas were processed. Check schema extraction logs above." << endl;
+    }
+
     results_json.push_back({"averages", averages});
 
     ofstream json_file(output);
@@ -476,8 +692,6 @@ int main(int argc, char* argv[]) {
     json_file.close();
 
     cout << "Results saved to " << output << endl;
-    cout << "Average Speedup: " << speedup << "x" << endl;
-    cout << "Average Normalized speedup: " << normalized_speedup << "x" << endl;
 
     return 0;
 }
