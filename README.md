@@ -225,14 +225,14 @@ If you use this benchmark, please cite:
 }
 ```
 
----
+<!-- ---
 
 ## 🤝 Contributing
 
 We welcome contributions!
 
 ```bash
-git clone https://github.com/your-username/parallelprompt.git
+git clone https://github.com/stevenkolawole/parallelprompt.git
 cd parallelprompt
 git checkout -b feature/my-feature
 make clean && make
@@ -245,7 +245,7 @@ Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for full details.
 
 ## 📄 License
 
-This project is licensed under the MIT License – see [`LICENSE`](LICENSE) for details.
+This project is licensed under the MIT License – see [`LICENSE`](LICENSE) for details. -->
 
 ---
 
