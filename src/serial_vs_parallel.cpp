@@ -319,7 +319,7 @@ string post_process_outputs(const Schema& schema, const vector<string>& parallel
     
     string post_process_prompt = "Original query: " + schema.original_prompt + "\n\n";
     post_process_prompt += "Parallel outputs:\n" + combined_outputs + "\n";
-    post_process_prompt += "Combine these outputs into a single, coherent response. Remove redundant context, ensure smooth flow, and maintain all essential information.";
+    post_process_prompt += "Combine these outputs into a single, coherent response. Clean up MOSTLY redundant phrases and formatting issues. Preserve the structure, and keep all outputs clearly separated with numbers or markers.";
     
     string system_prompt = "You are a helpful assistant that combines and cleans up parallel outputs. Remove redundancy while preserving all key information and ensuring natural flow.";
     
