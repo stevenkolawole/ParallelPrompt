@@ -19,10 +19,10 @@ cd parallelprompt
 make
 
 # Run a quick test (10 samples)
-./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output exec_outputs/test.json
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output test_exec_output.json
 
 # View results
-cat exec_outputs/test.json
+cat test_exec_output.json
 ```
 
 ---
@@ -137,14 +137,14 @@ export AWS_SECRET_KEY="your-aws-secret-key"
 ### Basic Execution
 
 ```bash
-./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output exec_outputs/test.json
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output test_exec_output.json
 ```
 
 ### Advanced Options
 
 ```bash
 # Run with 50 samples
-./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output exec_outputs/sample.json --sample-size 50 --post-process
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output sample.json --sample-size 50 --post-process
 ```
 
 ### Output Format
@@ -236,7 +236,7 @@ git clone https://github.com/stevenkolawole/parallelprompt.git
 cd parallelprompt
 git checkout -b feature/my-feature
 make clean && make
-./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output test.json
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output test_exec_output.json
 ```
 
 Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for full details.
