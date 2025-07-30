@@ -83,7 +83,7 @@ parallelprompt/
 ├── datasets/               # Benchmark data (also on HuggingFace)
 │   ├── lmsys_parallelizable_queries.csv    # LMSYS subset
 │   ├── wildchat_parallelizable_queries.csv # WildChat subset  
-│   └── README.md                            # Dataset documentation
+│   └── README.md                            # Dataset documentation (on HuggingFace's Dataset Page for now)
 ├── src/                    # Phase 2: Execution engine (OpenAI)
 │   ├── serial_vs_parallel.cpp     # Main benchmarking suite
 │   ├── parallel_vary_n.cpp        # Scalability analysis
