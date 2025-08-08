@@ -180,18 +180,24 @@ string get_system_prompt(const string& category) {
     } else if (category == "Translation") {
         return "You are a helpful assistant specializing in translation. Provide accurate translations without additional commentary.";
     } else if (category == "Language Correction") {
-        return "You are a helpful assistant specializing in language correction. Correct errors while preserving original meaning.";
+        return "You are a helpful assistant specializing in language correction. Correct errors while preserving original meaning; be concise.";
     } else if (category == "Sentiment Analysis") {
         return "You are a helpful assistant specializing in sentiment analysis. Provide concise sentiment classifications.";
-    } else if (category == "Repeated Generation") {
-        return "You are a helpful assistant. Provide concise and accurate responses based on the given context.";
     } else {
-        return "You are a helpful assistant. Provide accurate and relevant information based on the given task.";
+        return "You are a helpful assistant. Provide concise and accurate responses based on the given task and context.";
     }
 }
 
-openai::Json call_openai(string system_prompt, string prompt, int max_tokens) {
+openai::Json call_openai(string system_prompt, string prompt, int max_tokens, string api_endpoint = "") {
     auto openai_instance = openai::OpenAI();
+    
+    // Note: Custom endpoints would need to be set via OPENAI_API_BASE environment variable
+    // or library-specific configuration. This parameter is for future extensibility.
+    if (!api_endpoint.empty()) {
+        std::cerr << "Warning: Custom API endpoint specified but not yet supported by this OpenAI library version." << std::endl;
+        std::cerr << "Please set OPENAI_API_BASE environment variable instead." << std::endl;
+    }
+    
     string request = R"({
        "model": "gpt-4-0125-preview",
        "messages": [{"role": "system", "content": ")" + system_prompt + R"("}, {"role": "user", "content": ")" + prompt + R"("}],
@@ -391,18 +397,18 @@ openai::Json call_openai_postprocess(string system_prompt, string prompt, int ma
 }
 
 // Execute schema serially
-pair<int, string> execute_serial(const Schema& schema) {
+pair<int, string> execute_serial(const Schema& schema, string api_endpoint = "") {
     string prompt = schema.original_prompt;
     string escaped_prompt = escape_json(prompt);
     string system_prompt = get_system_prompt(schema.category);
     
-    auto completion = call_openai(system_prompt, escaped_prompt, 4000);
+    auto completion = call_openai(system_prompt, escaped_prompt, 4000, api_endpoint);
     string output = completion["choices"][0]["message"]["content"];
     return make_pair(completion["usage"]["completion_tokens"], output);
 }
 
 // Execute schema in parallel
-tuple<vector<int>, int, vector<pair<int, openai::Json>>> execute_parallel(const Schema& schema) {
+tuple<vector<int>, int, vector<pair<int, openai::Json>>> execute_parallel(const Schema& schema, string api_endpoint = "") {
     string base_template = schema.template_str;
     string system_prompt = get_system_prompt(schema.category);
     int n_tasks = schema.has_data ? schema.data_items.size() : schema.n_count;
@@ -432,9 +438,9 @@ tuple<vector<int>, int, vector<pair<int, openai::Json>>> execute_parallel(const 
         
         string escaped_prompt = escape_json(prompt);
         
-        futures.push_back(async(launch::async, [task_system_prompt, escaped_prompt]() {
+        futures.push_back(async(launch::async, [task_system_prompt, escaped_prompt, api_endpoint]() {
             auto start = high_resolution_clock::now();
-            auto completion = call_openai(task_system_prompt, escaped_prompt, 1000);
+            auto completion = call_openai(task_system_prompt, escaped_prompt, 1000, api_endpoint);
             auto end = high_resolution_clock::now();
             milliseconds duration = duration_cast<milliseconds>(end - start);
             return make_pair(duration.count(), completion);
@@ -465,9 +471,9 @@ string post_process_outputs(const Schema& schema, const vector<string>& parallel
     
     string post_process_prompt = "Original query: " + schema.original_prompt + "\n\n";
     post_process_prompt += "Parallel outputs:\n" + combined_outputs + "\n";
-    post_process_prompt += "Combine these outputs into a single, coherent response that ensures smooth flow. Clean up ONLY redundant phrases and formatting issues. Preserve the structure and content, and keep all outputs clearly separated with numbers or markers";
+    post_process_prompt += "Combine these outputs into a single, coherent response. Clean up MOSTLY redundant content and formatting issues. Ensure smooth flow. Preserve the structure, and keep all outputs clearly separated with numbers or markers";
     
-    string system_prompt = "You are a helpful assistant that combines and cleans up parallel outputs. Remove redundancy while preserving all key information and ensuring natural flow.";
+    string system_prompt = "You are a helpful assistant that combines and cleans up parallel outputs. Remove redundancy while preserving all key information and ensuring smooth, natural flow.";
     
     try {
         auto completion = call_openai_postprocess(system_prompt, post_process_prompt);
@@ -482,6 +488,7 @@ int main(int argc, char* argv[]) {
     std::string queries;
     std::string output;
     std::string sample_size = "10";  // Default sample size
+    std::string api_endpoint = "";   // Custom API endpoint
     bool enable_postprocessing = false;
     bool end_to_end_mode = false;
 
@@ -489,13 +496,14 @@ int main(int argc, char* argv[]) {
         {"queries", required_argument, nullptr, 'q'},
         {"output", required_argument, nullptr, 'o'},
         {"sample-size", required_argument, nullptr, 's'},
+        {"api-endpoint", required_argument, nullptr, 'a'},
         {"post-process", no_argument, nullptr, 'p'},
         {"end-to-end", no_argument, nullptr, 'e'},
         {nullptr, 0, nullptr, 0},
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "q:o:s:pe", long_options, nullptr)) != -1) {
+    while ((opt = getopt_long(argc, argv, "q:o:s:a:pe", long_options, nullptr)) != -1) {
         switch (opt) {
             case 'q':
                 queries = optarg;
@@ -506,6 +514,9 @@ int main(int argc, char* argv[]) {
             case 's':
                 sample_size = optarg;
                 break;
+            case 'a':
+                api_endpoint = optarg;
+                break;
             case 'p':
                 enable_postprocessing = true;
                 break;
@@ -513,7 +524,7 @@ int main(int argc, char* argv[]) {
                 end_to_end_mode = true;
                 break;
             default:
-                std::cerr << "Usage: " << argv[0] << " --queries <csv_file> --output <output_file> [--sample-size <num|all>] [--post-process] [--end-to-end]" << std::endl;
+                std::cerr << "Usage: " << argv[0] << " --queries <csv_file> --output <output_file> [--sample-size <num|all>] [--api-endpoint <url>] [--post-process] [--end-to-end]" << std::endl;
                 return 1;
         }
     }
@@ -521,6 +532,11 @@ int main(int argc, char* argv[]) {
     if (queries.empty() || output.empty()) {
         std::cerr << "Both --queries and --output are required." << std::endl;
         return 1;
+    }
+
+    if (!api_endpoint.empty()) {
+        std::cout << "Custom API endpoint requested: " << api_endpoint << std::endl;
+        std::cout << "Note: Set OPENAI_API_BASE environment variable to use custom endpoints" << std::endl;
     }
 
     if (end_to_end_mode) {
@@ -588,13 +604,13 @@ int main(int argc, char* argv[]) {
 
         // Serial execution (always using original prompt)
         auto start_serial = high_resolution_clock::now();
-        auto [serial_tokens, serial_output] = execute_serial(base_schema); // Always use original for fair comparison
+        auto [serial_tokens, serial_output] = execute_serial(base_schema, api_endpoint);
         auto end_serial = high_resolution_clock::now();
         milliseconds serial_duration = duration_cast<milliseconds>(end_serial - start_serial);
 
         // Parallel execution (using working_schema which may be extracted or pre-existing)
         auto start_parallel = high_resolution_clock::now();
-        auto [parallel_tokens, sum_parallel_tokens, parallel_results] = execute_parallel(working_schema);
+        auto [parallel_tokens, sum_parallel_tokens, parallel_results] = execute_parallel(working_schema, api_endpoint);
         auto end_parallel = high_resolution_clock::now();
         milliseconds parallel_duration = duration_cast<milliseconds>(end_parallel - start_parallel);
 
@@ -692,6 +708,6 @@ int main(int argc, char* argv[]) {
     json_file.close();
 
     cout << "Results saved to " << output << endl;
-
+    
     return 0;
 }
