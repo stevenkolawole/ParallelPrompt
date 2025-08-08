@@ -153,6 +153,23 @@ Extracts schemas from raw prompts using GPT-4o, then executes in parallel:
 ./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output e2e_test.json --sample-size 5 --end-to-end
 ```
 
+### Customer OpenAI-Compatible Servers
+
+The benchmark supports any OpenAI-compatible API server (SGLang, vLLM, LocalAI, etc.):
+
+```bash
+# SGLang server
+export OPENAI_API_BASE=http://localhost:30000/v1
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output results.json
+
+# vLLM server
+export OPENAI_API_BASE=http://localhost:8000/v1
+./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output results.json
+
+# One-liner approach
+OPENAI_API_BASE=http://localhost:8000/v1 ./bin/alphabits --queries datasets/lmsys_parallelizable_queries.csv --output results.json
+```
+
 ### Command Line Options
 
 | Option            | Description                                         | Default |
@@ -162,6 +179,7 @@ Extracts schemas from raw prompts using GPT-4o, then executes in parallel:
 | `--sample-size`   | Number of prompts to process (`<num>` or `all`)     | 10 |
 | `--post-process`  | Enable output cleanup using GPT-4o-mini             | Disabled |
 | `--end-to-end`    | Extract schemas from raw prompts (vs. using CSV)    | Disabled |
+<!-- | `--api-endpoint`  | Custom OpenAI-compatible API endpoint               | `https://api.openai.com/v1` | -->
 
 ---
 
@@ -201,7 +219,7 @@ Extracts schemas from raw prompts using GPT-4o, then executes in parallel:
 
 ---
 
-## 🔧 Extending the Benchmark
+## 🔧 Use Cases & Extending the Benchmark
 
 ### Benchmarking Parallelization Methods
 
@@ -229,7 +247,7 @@ call_gpt_schema_extraction(..., model="gpt-4o", ...)
 
 ### Custom Post-Processing
 
-Edit `post_process_outputs()` in `src/serial_vs_parallel.cpp`:
+Edit `post_process_outputs()` function in `src/serial_vs_parallel.cpp`:
 
 ```cpp
 string post_process_prompt = "Your custom post-processing instructions...";
@@ -239,7 +257,7 @@ string post_process_prompt = "Your custom post-processing instructions...";
 
 ## 📚 Citation
 
-If you use this benchmark, please cite:
+If you use this benchmark or find it relevant, please cite:
 
 ```bibtex
 @article{parallelprompt2025,
