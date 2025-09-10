@@ -262,8 +262,8 @@ If you use this benchmark or find it relevant, please cite:
 ```bibtex
 @article{parallelprompt2025,
   title={PARALLELPROMPT: Extracting Parallelism from Large Language Model Queries},
-  author={TBD},
-  journal={arXiv preprint arXiv:TBD},
+  author={Kolawole, Steven and Santhanam, Keshav and Smith, Virginia and Thaker, Pratiksha},
+  journal={arXiv preprint arXiv:2506.18728},
   year={2025}
 }
 ```
@@ -273,5 +273,4 @@ If you use this benchmark or find it relevant, please cite:
 ## 💬 Questions?
 
 - 🐛 [GitHub Issues](https://github.com/stevenkolawole/parallelprompt/issues)  
-- 📧 [Contact](TBD)
-<!-- (mailto:skolawol@andrew.cmu.edu) -->
+- 📧 [Contact](mailto:skolawol@andrew.cmu.edu)
