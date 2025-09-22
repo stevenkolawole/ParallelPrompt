@@ -261,7 +261,7 @@ If you use this benchmark or find it relevant, please cite:
 
 ```bibtex
 @article{parallelprompt2025,
-  title={PARALLELPROMPT: Extracting Parallelism from Large Language Model Queries},
+  title={ParallelPrompt: Extracting Parallelism from Large Language Model Queries},
   author={Kolawole, Steven and Santhanam, Keshav and Smith, Virginia and Thaker, Pratiksha},
   journal={Proceedings of the 39th Conference on Neural Information Processing Systems (NeurIPS 2025) Datasets and Benchmarks Track},
   year={2025}
