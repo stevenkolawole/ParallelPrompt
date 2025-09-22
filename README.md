@@ -1,6 +1,6 @@
 # PARALLELPROMPT: A Benchmark for Intra-Query Semantic Parallelism
 
-[![Paper](https://img.shields.io/badge/Paper-arXiv-red)](https://arxiv.org/abs/TBD)
+[![Paper](https://img.shields.io/badge/Paper-arXiv-red)](https://arxiv.org/abs/2506.18728)
 [![Dataset](https://img.shields.io/badge/🤗%20Dataset-ParallelPrompt-yellow)](https://huggingface.co/datasets/forgelab/ParallelPrompt)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -263,7 +263,7 @@ If you use this benchmark or find it relevant, please cite:
 @article{parallelprompt2025,
   title={PARALLELPROMPT: Extracting Parallelism from Large Language Model Queries},
   author={Kolawole, Steven and Santhanam, Keshav and Smith, Virginia and Thaker, Pratiksha},
-  journal={arXiv preprint arXiv:2506.18728},
+  journal={Proceedings of the 39th Conference on Neural Information Processing Systems (NeurIPS 2025) Datasets and Benchmarks Track},
   year={2025}
 }
 ```
