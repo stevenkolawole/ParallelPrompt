@@ -3,6 +3,7 @@
 [![Paper](https://img.shields.io/badge/Paper-arXiv-red)](https://arxiv.org/abs/2506.18728)
 [![Dataset](https://img.shields.io/badge/🤗%20Dataset-ParallelPrompt-yellow)](https://huggingface.co/datasets/forgelab/ParallelPrompt)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23598824.svg)](https://doi.org/10.5281/zenodo.23598824)
 
 **PARALLELPROMPT** is the first benchmark for measuring intra-query semantic parallelism in real-world LLM prompts. Our benchmark enables both method and system evaluation by providing 37,000+ naturally occurring prompts with structured schemas that reveal parallelizable structure within individual user queries.
 
