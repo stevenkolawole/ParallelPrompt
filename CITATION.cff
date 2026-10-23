@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this benchmark, please cite it using the metadata below."
+title: "ParallelPrompt: Extracting Parallelism from Large Language Model Queries"
+type: software
+authors: [{family-names: Kolawole, given-names: Steven}, {family-names: Santhanam, given-names: Keshav}, {family-names: Smith, given-names: Virginia}, {family-names: Thaker, given-names: Pratiksha}]
+repository-code: "https://github.com/stevenkolawole/ParallelPrompt"
+url: "https://huggingface.co/datasets/forgelab/ParallelPrompt"
+license: MIT
+version: 1.0.0
+date-released: 2026-10-23
+abstract: "A benchmark for intra-query semantic parallelism in real-world LLM prompts: 37,000+ naturally occurring prompts with structured schemas, plus the curation pipeline and evaluation suite. NeurIPS 2025 Datasets and Benchmarks Track."
+identifiers: [{type: other, value: "arXiv:2506.18728", description: "Paper"}]
